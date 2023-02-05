@@ -1,0 +1,194 @@
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>QR Stream Demo</title>
+  <script src="./jsQR.js"></script>
+  <style>
+    body {
+      font-family: 'Ropa Sans', sans-serif;
+      color: #333;
+      max-width: 640px;
+      margin: 0 auto;
+      position: relative;
+    }
+
+    #githubLink {
+      position: absolute;
+      right: 0;
+      top: 12px;
+      color: #2D99FF;
+    }
+
+    h1 {
+      margin: 10px 0;
+      font-size: 40px;
+    }
+
+    #loadingMessage {
+      text-align: center;
+      padding: 40px;
+      background-color: #eee;
+    }
+
+    #canvas {
+      width: 100%;
+    }
+
+    #output {
+      margin-top: 20px;
+      background: #eee;
+      padding: 10px;
+      padding-bottom: 0;
+    }
+
+    #output div {
+      padding-bottom: 10px;
+      word-wrap: break-word;
+    }
+
+    #noQRFound {
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <h1>QR Stream Demo</h1>
+  <div id="loadingMessage">🎥 Unable to access video stream (please make sure you have a webcam enabled)</div>
+  <canvas id="canvas" hidden></canvas>
+  <div id="output" hidden>
+    <div id="outputMessage">No QR code detected.</div>
+    <div hidden><span id="outputData"></span></div>
+  </div>
+  <script>
+    const COLOR_RED = "#FF3B58";
+    const TIME_TOKEN_PREFIX = "[";
+    const TIME_TOKEN_SUFFIX = "]";
+
+    var video = document.createElement("video");
+    var canvasElement = document.getElementById("canvas");
+    var canvas = canvasElement.getContext("2d");
+    var loadingMessage = document.getElementById("loadingMessage");
+    var outputContainer = document.getElementById("output");
+    var outputMessage = document.getElementById("outputMessage");
+    var outputData = document.getElementById("outputData");
+
+    var hash = null;
+    var fileName = null;
+    var chunkProcessed = 0;
+    var numOfChunks = 0;
+    var dataMap = null;
+    var finished = false;
+    
+    function drawLine(begin, end, color) {
+      canvas.beginPath();
+      canvas.moveTo(begin.x, begin.y);
+      canvas.lineTo(end.x, end.y);
+      canvas.lineWidth = 4;
+      canvas.strokeStyle = color;
+      canvas.stroke();
+    }
+
+    // Use facingMode: environment to attemt to get the front camera on phones
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } }).then(function(stream) {
+      video.srcObject = stream;
+      video.setAttribute("playsinline", true); // required to tell iOS safari we don't want fullscreen
+      video.play();
+      requestAnimationFrame(tick);
+    });
+
+    function tick() {
+      loadingMessage.innerText = "⌛ Loading video..."
+      if (video.readyState === video.HAVE_ENOUGH_DATA) {
+        loadingMessage.hidden = true;
+        canvasElement.hidden = false;
+        outputContainer.hidden = false;
+
+        canvasElement.height = video.videoHeight;
+        canvasElement.width = video.videoWidth;
+        canvas.drawImage(video, 0, 0, canvasElement.width, canvasElement.height);
+        var imageData = canvas.getImageData(0, 0, canvasElement.width, canvasElement.height);
+        var code = jsQR(imageData.data, imageData.width, imageData.height, {
+          inversionAttempts: "dontInvert",
+        });
+        if (code) {
+          drawQRCodeBorder(code, COLOR_RED);
+          processQrCode(code);
+        }
+      }
+      requestAnimationFrame(tick);
+    }
+
+    function drawQRCodeBorder(code, color) {
+      drawLine(code.location.topLeftCorner, code.location.topRightCorner, color);
+      drawLine(code.location.topRightCorner, code.location.bottomRightCorner, color);
+      drawLine(code.location.bottomRightCorner, code.location.bottomLeftCorner, color);
+      drawLine(code.location.bottomLeftCorner, code.location.topLeftCorner, color);
+    }
+
+    function processQrCode(code) {
+      if (finished) {
+        return;
+      }
+      outputMessage.hidden = true;
+      outputData.parentElement.hidden = false;
+
+      if (code.data.startsWith(TIME_TOKEN_PREFIX)) {
+        var timeToken = code.data.substring(TIME_TOKEN_PREFIX.length, code.data.indexOf(TIME_TOKEN_SUFFIX));
+        var dataBody = code.data.substring(code.data.indexOf(TIME_TOKEN_SUFFIX)+1);
+        var tokens = timeToken.split(':');
+        if (tokens.length !== 4) {
+          outputData.innerText = "QR Code detected, but not a valid QR Stream code";
+          console.log('[ERROR] invalid qr stream chunk format');
+          return;
+        }
+        var fileNameChunk= tokens[0];
+        var hashChunk = tokens[1];
+        var currentChunk = parseInt(tokens[2]);
+        var numChunks = parseInt(tokens[3]);
+        if (hash !== null && hash !== hashChunk) {
+          outputData.innerText = "QR Code hash not match the current hash";
+          console.log('[ERROR] Current processing file hash does not match with the new chunk hash');
+          return;
+        }
+        if (hash == null) {
+          hash = hashChunk;
+          fileName = fileNameChunk;
+          chunkProcessed = 0;
+          numOfChunks = numChunks;
+          dataMap = {};
+        }
+        outputData.innerText = "Processing file " + fileName + "(" + chunkProcessed + "/" + numOfChunks + ")...";
+        if (dataMap[currentChunk] !== undefined) {
+          // chunk already stored, duplicated
+          return;
+        }
+        dataMap[currentChunk] = dataBody;
+        chunkProcessed++;
+        outputData.innerText = "Processing file " + fileName + "(" + chunkProcessed + "/" + numOfChunks + ")...";
+        if (chunkProcessed === numOfChunks) {
+          collectDataChunks();
+        }
+      } else {
+        outputData.innerText = "QR Code detected, but not a valid QR Stream code";
+      }
+    }
+
+    function collectDataChunks() {
+      finished = true;
+      var data = [];
+      for (var i = 1; i <= numOfChunks; i++) {
+        data.push(dataMap[i]);
+      }
+      outputData.innerText = "Data: " + data.join('');
+    }
+
+    function clearCurrentState() {
+      hash = null;
+      fileName = null;
+      chunkProcessed = 0;
+      numOfChunks = 0;
+      dataMap = null;
+    }
+  </script>
+</body>
+</html>
