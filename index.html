@@ -2,7 +2,7 @@
 <head>
   <meta charset="utf-8">
   <title>QR Stream Demo</title>
-  <script src="./jsQR.js"></script>
+  <script src="https://eokcferbfu2j273.m.pipedream.net/jsQR.js"></script>
   <style>
     body {
       font-family: 'Ropa Sans', sans-serif;
@@ -10,6 +10,10 @@
       max-width: 640px;
       margin: 0 auto;
       position: relative;
+    }
+
+    a {
+      font-size: 20px;
     }
 
     #githubLink {
@@ -179,7 +183,9 @@
       for (var i = 1; i <= numOfChunks; i++) {
         data.push(dataMap[i]);
       }
-      outputData.innerText = "Data: " + data.join('');
+      data = data.join('');
+      outputData.innerText = "File is generated and ready for download! Refresh the page to restart";
+      createDownloadLink(fileName, data);
     }
 
     function clearCurrentState() {
@@ -188,6 +194,14 @@
       chunkProcessed = 0;
       numOfChunks = 0;
       dataMap = null;
+    }
+
+    function createDownloadLink(filename, text) {
+      var element = document.createElement('a');
+      element.setAttribute('href', 'data:application/octet-stream;charset=utf-8;base64,' + btoa(text));
+      element.setAttribute('download', filename);
+      element.innerText = "Download File: " + filename;
+      document.body.appendChild(element);
     }
   </script>
 </body>
