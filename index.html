@@ -196,9 +196,9 @@
       dataMap = null;
     }
 
-    function createDownloadLink(filename, text) {
+    function createDownloadLink(filename, b64Data) {
       var element = document.createElement('a');
-      element.setAttribute('href', 'data:application/octet-stream;charset=utf-8;base64,' + btoa(text));
+      element.setAttribute('href', 'data:application/octet-stream;charset=utf-8;base64,' + b64Data);
       element.setAttribute('download', filename);
       element.innerText = "Download File: " + filename;
       document.body.appendChild(element);
